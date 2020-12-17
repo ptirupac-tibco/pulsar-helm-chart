@@ -17,36 +17,40 @@
 # under the License.
 #
 
-{{- if .Values.extra.dashboard }}
-{{- if .Values.dashboard.ingress.enabled }}
+{{- if .Values.proxy.ingress.enabled }}
 apiVersion: extensions/v1beta1
 kind: Ingress
 metadata:
   labels:
     {{- include "pulsar.standardLabels" . | nindent 4 }}
-  component: {{ .Values.dashboard.component }}
+    component: {{ .Values.proxy.component }}
   annotations:
-{{- with .Values.dashboard.ingress.annotations }}
+{{- with .Values.proxy.ingress.annotations }}
 {{ toYaml . | indent 4 }}
 {{- end }}
-  name: "{{ template "pulsar.fullname" . }}-{{ .Values.dashboard.component }}"
+  name: "{{ template "pulsar.fullname" . }}-{{ .Values.proxy.component }}"
   namespace: {{ template "pulsar.namespace" . }}
 spec:
-{{- if .Values.dashboard.ingress.tls.enabled }}
+{{- if .Values.proxy.ingress.tls.enabled }}
   tls:
     - hosts:
-        - {{ .Values.dashboard.ingress.hostname }}
-      {{- with .Values.dashboard.ingress.tls.secretName }}
+        - {{ .Values.proxy.ingress.hostname }}
+      {{- with .Values.proxy.ingress.tls.secretName }}
       secretName: {{ . }}
       {{- end }}
 {{- end }}
   rules:
-    - host: {{ required "Dashboard ingress hostname not provided" .Values.dashboard.ingress.hostname }}
-      http:
+    - http:
         paths:
-          - path: {{ .Values.dashboard.ingress.path }}
+          - path: {{ .Values.proxy.ingress.path }}
             backend:
-              serviceName: "{{ template "pulsar.fullname" . }}-{{ .Values.dashboard.component }}"
-              servicePort: {{ .Values.dashboard.ingress.port }}
-{{- end }}
+              serviceName: "{{ template "pulsar.fullname" . }}-{{ .Values.proxy.component }}"
+              {{- if and .Values.tls.enabled .Values.tls.proxy.enabled }}
+              servicePort: {{ .Values.proxy.ports.https }}
+              {{- else }}
+              servicePort: {{ .Values.proxy.ports.http }}
+              {{- end }}
+      {{- if .Values.proxy.ingress.hostname }}
+      host: {{ .Values.proxy.ingress.hostname }}
+      {{- end }}
 {{- end }}

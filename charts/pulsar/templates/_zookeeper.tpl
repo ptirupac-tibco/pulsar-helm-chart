@@ -9,6 +9,10 @@ Define the pulsar zookeeper
 Define the pulsar zookeeper
 */}}
 {{- define "pulsar.zookeeper.connect" -}}
+{{$zk:=.Values.pulsar_metadata.userProvidedZookeepers}}
+{{- if and (not .Values.components.zookeeper) $zk }}
+{{- $zk -}}
+{{ else }}
 {{- if not (and .Values.tls.enabled .Values.tls.zookeeper.enabled) -}}
 {{ template "pulsar.zookeeper.service" . }}:{{ .Values.zookeeper.ports.client }}
 {{- end -}}
@@ -16,12 +20,13 @@ Define the pulsar zookeeper
 {{ template "pulsar.zookeeper.service" . }}:{{ .Values.zookeeper.ports.clientTls }}
 {{- end -}}
 {{- end -}}
+{{- end -}}
 
 {{/*
 Define the zookeeper hostname
 */}}
 {{- define "pulsar.zookeeper.hostname" -}}
-${HOSTNAME}.{{ template "pulsar.zookeeper.service" . }}.{{ .Values.namespace }}.svc.cluster.local
+${HOSTNAME}.{{ template "pulsar.zookeeper.service" . }}.{{ template "pulsar.namespace" . }}.svc.{{ .Values.clusterDomain }}
 {{- end -}}
 
 {{/*

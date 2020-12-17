@@ -23,7 +23,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: "{{ template "pulsar.fullname" . }}-{{ .Values.zookeeper.component }}"
-  namespace: {{ .Values.namespace }}
+  namespace: {{ template "pulsar.namespace" . }}
   labels:
     {{- include "pulsar.standardLabels" . | nindent 4 }}
     component: {{ .Values.zookeeper.component }}
@@ -56,13 +56,14 @@ spec:
       affinity:
         {{- if and .Values.affinity.anti_affinity .Values.zookeeper.affinity.anti_affinity}}
         podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
+          {{ if eq .Values.zookeeper.affinity.type "requiredDuringSchedulingIgnoredDuringExecution"}}
+          {{ .Values.zookeeper.affinity.type }}:
           - labelSelector:
               matchExpressions:
               - key: "app"
                 operator: In
                 values:
-                - "{{ template "pulsar.name" . }}-{{ .Values.zookeeper.component }}"
+                - "{{ template "pulsar.name" . }}"
               - key: "release"
                 operator: In
                 values:
@@ -72,6 +73,26 @@ spec:
                 values:
                 - {{ .Values.zookeeper.component }}
             topologyKey: "kubernetes.io/hostname"
+        {{ else }}
+          {{ .Values.zookeeper.affinity.type }}:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: "app"
+                      operator: In
+                      values:
+                      - "{{ template "pulsar.name" . }}"
+                    - key: "release"
+                      operator: In
+                      values:
+                      - {{ .Release.Name }}
+                    - key: "component" 
+                      operator: In
+                      values:
+                      - {{ .Values.zookeeper.component }}
+                topologyKey: "kubernetes.io/hostname"
+        {{ end }}
         {{- end }}
       terminationGracePeriodSeconds: {{ .Values.zookeeper.gracePeriod }}
       containers:
@@ -88,8 +109,11 @@ spec:
           bin/apply-config-from-env.py conf/zookeeper.conf;
           {{- include "pulsar.zookeeper.tls.settings" . | nindent 10 }}
           bin/generate-zookeeper-config.sh conf/zookeeper.conf;
-          bin/pulsar zookeeper;
+          exec bin/pulsar zookeeper;
         ports:
+        # prometheus needs to access /metrics endpoint
+        - name: http
+          containerPort: {{ .Values.zookeeper.ports.http }}
         - name: client
           containerPort: {{ .Values.zookeeper.ports.client }}
         - name: follower

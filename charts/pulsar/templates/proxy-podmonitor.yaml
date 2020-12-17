@@ -17,18 +17,26 @@
 # under the License.
 #
 
-{{- if .Values.components.toolset }}
-apiVersion: v1
-kind: Service
+# deploy proxy PodMonitor only when `$.Values.proxy.podMonitor.enabled` is true
+{{- if $.Values.proxy.podMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
 metadata:
-  name: "{{ template "pulsar.fullname" . }}-{{ .Values.toolset.component }}"
-  namespace: {{ template "pulsar.namespace" . }}
+  name: {{ template "pulsar.name" . }}-proxy
   labels:
-    {{- include "pulsar.standardLabels" . | nindent 4 }}
-    component: {{ .Values.toolset.component }}
+    app: {{ template "pulsar.name" . }}
+    chart: {{ template "pulsar.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
 spec:
-  clusterIP: None
+  jobLabel: proxy
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics
+      scheme: http
+      interval: {{ $.Values.proxy.podMonitor.interval }}
+      scrapeTimeout: {{ $.Values.proxy.podMonitor.scrapeTimeout }}
   selector:
-    {{- include "pulsar.matchLabels" . | nindent 4 }}
-    component: {{ .Values.toolset.component }}
+    matchLabels:
+      component: proxy
 {{- end }}

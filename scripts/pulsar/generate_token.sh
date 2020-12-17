@@ -32,6 +32,7 @@ Options:
        -k,--release                     the pulsar helm release name
        -r,--role                        the pulsar role
        -s,--symmetric                   use symmetric secret key for generating the token. If not provided, the private key of an asymmetric pair of keys is used.
+       -l,--local                       read and write output from local filesystem, do not install secret to kubernetes
 Usage:
     $0 --namespace pulsar --release pulsar-dev -c <pulsar-role>
 EOF
@@ -63,6 +64,10 @@ case $key in
     symmetric=true
     shift
     ;;
+    -l|--local)
+    local=true
+    shift
+    ;;
     -h|--help)
     usage
     exit 0
@@ -88,6 +93,19 @@ pulsar::ensure_pulsarctl
 namespace=${namespace:-pulsar}
 release=${release:-pulsar-dev}
 
+function pulsar::jwt::get_secret() {
+    local type=$1
+    local tmpfile=$2
+    local secret_name=$3
+    echo ${secret_name}
+    if [[ "${local}" == "true" ]]; then
+        cp ${type} ${tmpfile}
+    else
+        echo "kubectl get -n ${namespace} secrets ${secret_name} -o jsonpath="{.data.${type}}" | base64 --decode > ${tmpfile}"
+        kubectl get -n ${namespace} secrets ${secret_name} -o jsonpath="{.data['${type}']}" | base64 --decode > ${tmpfile}
+    fi
+}
+
 function pulsar::jwt::generate_symmetric_token() {
     local token_name="${release}-token-${role}"
     local secret_name="${release}-token-symmetric-key"
@@ -96,11 +114,12 @@ function pulsar::jwt::generate_symmetric_token() {
     trap "test -f $tmpfile && rm $tmpfile" RETURN
     tokentmpfile=$(mktemp)
     trap "test -f $tokentmpfile && rm $tokentmpfile" RETURN
-    kubectl get -n ${namespace} secrets ${secret_name} -o jsonpath="{.data['SECRETKEY']}" | base64 --decode > ${tmpfile}
+    pulsar::jwt::get_secret SECRETKEY ${tmpfile} ${secret_name}
     ${PULSARCTL_BIN} token create -a HS256 --secret-key-file ${tmpfile} --subject ${role} 2&> ${tokentmpfile}
     newtokentmpfile=$(mktemp)
     tr -d '\n' < ${tokentmpfile} > ${newtokentmpfile}
-    kubectl create secret generic ${token_name} -n ${namespace} --from-file="TOKEN=${newtokentmpfile}" --from-literal="TYPE=symmetric"
+    echo "kubectl create secret generic ${token_name} -n ${namespace} --from-file="TOKEN=${newtokentmpfile}" --from-literal="TYPE=symmetric" ${local:+ -o yaml --dry-run=client}"
+    kubectl create secret generic ${token_name} -n ${namespace} --from-file="TOKEN=${newtokentmpfile}" --from-literal="TYPE=symmetric" ${local:+ -o yaml --dry-run=client}
 }
 
 function pulsar::jwt::generate_asymmetric_token() {
@@ -111,11 +130,11 @@ function pulsar::jwt::generate_asymmetric_token() {
     trap "test -f $privatekeytmpfile && rm $privatekeytmpfile" RETURN
     tokentmpfile=$(mktemp)
     trap "test -f $tokentmpfile && rm $tokentmpfile" RETURN
-    kubectl get -n ${namespace} secrets ${secret_name} -o jsonpath="{.data['PRIVATEKEY']}" | base64 --decode > ${privatekeytmpfile}
+    pulsar::jwt::get_secret PRIVATEKEY ${privatekeytmpfile} ${secret_name}
     ${PULSARCTL_BIN} token create -a RS256 --private-key-file ${privatekeytmpfile} --subject ${role} 2&> ${tokentmpfile}
     newtokentmpfile=$(mktemp)
     tr -d '\n' < ${tokentmpfile} > ${newtokentmpfile}
-    kubectl create secret generic ${token_name} -n ${namespace} --from-file="TOKEN=${newtokentmpfile}" --from-literal="TYPE=asymmetric"
+    kubectl create secret generic ${token_name} -n ${namespace} --from-file="TOKEN=${newtokentmpfile}" --from-literal="TYPE=asymmetric" ${local:+ -o yaml --dry-run=client}
 }
 
 if [[ "${symmetric}" == "true" ]]; then

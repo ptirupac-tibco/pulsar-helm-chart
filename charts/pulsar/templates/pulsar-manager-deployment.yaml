@@ -22,7 +22,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: "{{ template "pulsar.fullname" . }}-{{ .Values.pulsar_manager.component }}"
-  namespace: {{ .Values.namespace }}
+  namespace: {{ template "pulsar.namespace" . }}
   labels:
     {{- include "pulsar.standardLabels" . | nindent 4 }}
     component: {{ .Values.pulsar_manager.component }}
@@ -58,7 +58,7 @@ spec:
 {{ toYaml .Values.pulsar_manager.resources | indent 12 }}
         {{- end }}
           ports:
-          - containerPort: {{ .Values.pulsar_manager.port }}
+          - containerPort: {{ .Values.pulsar_manager.service.targetPort }}
           volumeMounts:
           - name: pulsar-manager-data
             mountPath: /data

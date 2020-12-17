@@ -22,7 +22,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: "{{ template "pulsar.fullname" . }}-{{ .Values.proxy.component }}"
-  namespace: {{ .Values.namespace }}
+  namespace: {{ template "pulsar.namespace" . }}
   labels:
     {{- include "pulsar.standardLabels" . | nindent 4 }}
     component: {{ .Values.proxy.component }}
@@ -59,13 +59,14 @@ spec:
       affinity:
         {{- if and .Values.affinity.anti_affinity .Values.proxy.affinity.anti_affinity}}
         podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
+        {{ if eq .Values.proxy.affinity.type "requiredDuringSchedulingIgnoredDuringExecution"}}
+          {{ .Values.proxy.affinity.type }}:
           - labelSelector:
               matchExpressions:
               - key: "app"
                 operator: In
                 values:
-                - "{{ template "pulsar.name" . }}-{{ .Values.proxy.component }}"
+                - "{{ template "pulsar.name" . }}"
               - key: "release"
                 operator: In
                 values:
@@ -75,6 +76,26 @@ spec:
                 values:
                 - {{ .Values.proxy.component }}
             topologyKey: "kubernetes.io/hostname"
+        {{ else }}
+          {{ .Values.proxy.affinity.type }}:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: "app"
+                      operator: In
+                      values:
+                      - "{{ template "pulsar.name" . }}"
+                    - key: "release"
+                      operator: In
+                      values:
+                      - {{ .Release.Name }}
+                    - key: "component"
+                      operator: In
+                      values:
+                      - {{ .Values.proxy.component }}
+                topologyKey: "kubernetes.io/hostname"
+        {{ end }}
         {{- end }}
       terminationGracePeriodSeconds: {{ .Values.proxy.gracePeriod }}
       initContainers:
@@ -86,9 +107,15 @@ spec:
         command: ["sh", "-c"]
         args:
           - >-
-            until bin/pulsar zookeeper-shell -server {{ template "pulsar.fullname" . }}-{{ .Values.zookeeper.component }} get {{ .Values.metadataPrefix }}/admin/clusters/{{ template "pulsar.fullname" . }}; do
+            {{- if $zk:=.Values.pulsar_metadata.userProvidedZookeepers }}
+            until bin/pulsar zookeeper-shell -server {{ $zk }} ls {{ or .Values.metadataPrefix "/" }}; do
+              echo "user provided zookeepers {{ $zk }} are unreachable... check in 3 seconds ..." && sleep 3;
+            done;
+            {{ else }}
+            until bin/pulsar zookeeper-shell -server {{ template "pulsar.configurationStore.service" . }} get {{ .Values.metadataPrefix }}/admin/clusters/{{ template "pulsar.cluster.name" . }}; do
               sleep 3;
             done;
+            {{- end}}
       # This init container will wait for at least one broker to be ready before
       # deploying the proxy
       - name: wait-broker-ready
@@ -100,7 +127,7 @@ spec:
             set -e;
             brokerServiceNumber="$(nslookup -timeout=10 {{ template "pulsar.fullname" . }}-{{ .Values.broker.component }} | grep Name | wc -l)";
             until [ ${brokerServiceNumber} -ge 1 ]; do
-              echo "pulsar cluster {{ template "pulsar.fullname" . }} isn't initialized yet ... check in 10 seconds ...";
+              echo "pulsar cluster {{ template "pulsar.cluster.name" . }} isn't initialized yet ... check in 10 seconds ...";
               sleep 10;
               brokerServiceNumber="$(nslookup -timeout=10 {{ template "pulsar.fullname" . }}-{{ .Values.broker.component }} | grep Name | wc -l)";
             done;
@@ -144,7 +171,7 @@ spec:
         - >
           bin/apply-config-from-env.py conf/proxy.conf &&
           echo "OK" > status &&
-          bin/pulsar proxy
+          exec bin/pulsar proxy
         ports:
         # prometheus needs to access /metrics endpoint
         - name: http

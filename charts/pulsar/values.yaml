@@ -17,18 +17,28 @@
 # under the License.
 #
 
-
 ###
 ### K8S Settings
 ###
 
-## Namespace to deploy pulsar
-namespace: pulsar
+### Namespace to deploy pulsar
+# The namespace to use to deploy the pulsar components, if left empty
+# will default to .Release.Namespace (aka helm --namespace).
+namespace: ""
 namespaceCreate: false
+
+## clusterDomain as defined for your k8s cluster
+clusterDomain: cluster.local
 
 ###
 ### Global Settings
 ###
+
+## Set to true on install
+initialize: false
+
+## Set cluster name
+# clusterName:
 
 ## Pulsar Metadata Prefix
 ##
@@ -66,6 +76,10 @@ volumes:
 ## the `affinity.anti_affinity` settings to `false` for that component.
 affinity:
   anti_affinity: true
+  # Set the anti affinity type. Valid values:
+  # requiredDuringSchedulingIgnoredDuringExecution - rules must be met for pod to be scheduled (hard) requires at least one node per replica
+  # preferredDuringSchedulingIgnoredDuringExecution - scheduler will try to enforce but not guranentee
+  type: requiredDuringSchedulingIgnoredDuringExecution
 
 ## Components
 ##
@@ -124,34 +138,34 @@ extra:
 images:
   zookeeper:
     repository: apachepulsar/pulsar-all
-    tag: 2.6.0
+    tag: 2.7.0
     pullPolicy: IfNotPresent
   bookie:
     repository: apachepulsar/pulsar-all
-    tag: 2.6.0
+    tag: 2.7.0
     pullPolicy: IfNotPresent
   autorecovery:
     repository: apachepulsar/pulsar-all
-    tag: 2.6.0
+    tag: 2.7.0
     pullPolicy: IfNotPresent
   broker:
     repository: apachepulsar/pulsar-all
-    tag: 2.6.0
+    tag: 2.7.0
     pullPolicy: IfNotPresent
   proxy:
     repository: apachepulsar/pulsar-all
-    tag: 2.6.0
+    tag: 2.7.0
     pullPolicy: IfNotPresent
   functions:
     repository: apachepulsar/pulsar-all
-    tag: 2.6.0
+    tag: 2.7.0
   prometheus:
     repository: prom/prometheus
     tag: v2.17.2
     pullPolicy: IfNotPresent
   grafana:
     repository: streamnative/apache-pulsar-grafana-dashboard-k8s
-    tag: 0.0.8
+    tag: 0.0.10
     pullPolicy: IfNotPresent
   pulsar_manager:
     repository: apachepulsar/pulsar-manager
@@ -253,7 +267,14 @@ zookeeper:
   updateStrategy:
     type: RollingUpdate
   podManagementPolicy: OrderedReady
+  # If using Prometheus-Operator enable this PodMonitor to discover zookeeper scrape targets
+  # Prometheus-Operator does not add scrape targets based on k8s annotations
+  podMonitor:
+    enabled: false
+    interval: 10s
+    scrapeTimeout: 10s
   ports:
+    http: 8000
     client: 2181
     clientTls: 2281
     follower: 2888
@@ -278,6 +299,10 @@ zookeeper:
       periodSeconds: 30
   affinity:
     anti_affinity: true
+    # Set the anti affinity type. Valid values:
+    # requiredDuringSchedulingIgnoredDuringExecution - rules must be met for pod to be scheduled (hard) requires at least one node per replica
+    # preferredDuringSchedulingIgnoredDuringExecution - scheduler will try to enforce but not guranentee
+    type: requiredDuringSchedulingIgnoredDuringExecution
   annotations:
     prometheus.io/scrape: "true"
     prometheus.io/port: "8000"
@@ -321,7 +346,6 @@ zookeeper:
       -XX:+DoEscapeAnalysis
       -XX:+DisableExplicitGC
       -XX:+PerfDisableSharedMem
-      -Dzookeeper.forceSync=no
   ## Zookeeper service
   ## templates/zookeeper-service.yaml
   ##
@@ -345,11 +369,6 @@ bookkeeper:
   ## BookKeeper Cluster Initialize
   ## templates/bookkeeper-cluster-initialize.yaml
   metadata:
-    image:
-      # the image used for running `bookkeeper-cluster-initialize` job
-      repository: apachepulsar/pulsar-all
-      tag: 2.6.0
-      pullPolicy: IfNotPresent
     ## Set the resources used for running `bin/bookkeeper shell initnewcluster`
     ##
     resources:
@@ -360,6 +379,12 @@ bookkeeper:
   updateStrategy:
     type: RollingUpdate
   podManagementPolicy: Parallel
+  # If using Prometheus-Operator enable this PodMonitor to discover bookie scrape targets
+  # Prometheus-Operator does not add scrape targets based on k8s annotations
+  podMonitor:
+    enabled: false
+    interval: 10s
+    scrapeTimeout: 10s
   ports:
     http: 8000
     bookie: 3181
@@ -383,6 +408,10 @@ bookkeeper:
       periodSeconds: 30
   affinity:
     anti_affinity: true
+    # Set the anti affinity type. Valid values:
+    # requiredDuringSchedulingIgnoredDuringExecution - rules must be met for pod to be scheduled (hard) requires at least one node per replica
+    # preferredDuringSchedulingIgnoredDuringExecution - scheduler will try to enforce but not guranentee
+    type: requiredDuringSchedulingIgnoredDuringExecution
   annotations: {}
   tolerations: []
   gracePeriod: 30
@@ -461,8 +490,8 @@ bookkeeper:
   ## templates/bookkeeper-service.yaml
   ##
   service:
-    annotations:
-      publishNotReadyAddresses: "true"
+    spec:
+      publishNotReadyAddresses: true
   ## Bookkeeper PodDisruptionBudget
   ## templates/bookkeeper-pdb.yaml
   ##
@@ -484,6 +513,10 @@ autorecovery:
     # cloud.google.com/gke-nodepool: default-pool
   affinity:
     anti_affinity: true
+    # Set the anti affinity type. Valid values:
+    # requiredDuringSchedulingIgnoredDuringExecution - rules must be met for pod to be scheduled (hard) requires at least one node per replica
+    # preferredDuringSchedulingIgnoredDuringExecution - scheduler will try to enforce but not guranentee
+    type: requiredDuringSchedulingIgnoredDuringExecution
   annotations: {}
   # tolerations: []
   gracePeriod: 30
@@ -509,11 +542,17 @@ pulsar_metadata:
   image:
     # the image used for running `pulsar-cluster-initialize` job
     repository: apachepulsar/pulsar-all
-    tag: 2.6.0
+    tag: 2.7.0
     pullPolicy: IfNotPresent
   ## set an existing configuration store
   # configurationStore:
   configurationStoreMetadataPrefix: ""
+  configurationStorePort: 2181
+
+  ## optional, you can provide your own zookeeper metadata store for other components
+  # to use this, you should explicit set components.zookeeper to false
+  #
+  # userProvidedZookeepers: "zk01.example.com:2181,zk02.example.com:2181"
 
 ## Pulsar: Broker cluster
 ## templates/broker-statefulset.yaml
@@ -523,6 +562,12 @@ broker:
   # so the metrics are correctly rendered in grafana dashboard
   component: broker
   replicaCount: 3
+  # If using Prometheus-Operator enable this PodMonitor to discover broker scrape targets
+  # Prometheus-Operator does not add scrape targets based on k8s annotations
+  podMonitor:
+    enabled: false
+    interval: 10s
+    scrapeTimeout: 10s
   ports:
     http: 8080
     https: 8443
@@ -548,6 +593,10 @@ broker:
       periodSeconds: 10
   affinity:
     anti_affinity: true
+    # Set the anti affinity type. Valid values:
+    # requiredDuringSchedulingIgnoredDuringExecution - rules must be met for pod to be scheduled (hard) requires at least one node per replica
+    # preferredDuringSchedulingIgnoredDuringExecution - scheduler will try to enforce but not guranentee
+    type: preferredDuringSchedulingIgnoredDuringExecution
   annotations: {}
   tolerations: []
   gracePeriod: 30
@@ -609,6 +658,12 @@ proxy:
   # so the metrics are correctly rendered in grafana dashboard
   component: proxy
   replicaCount: 3
+  # If using Prometheus-Operator enable this PodMonitor to discover proxy scrape targets
+  # Prometheus-Operator does not add scrape targets based on k8s annotations
+  podMonitor:
+    enabled: false
+    interval: 10s
+    scrapeTimeout: 10s
   # nodeSelector:
     # cloud.google.com/gke-nodepool: default-pool
   probe:
@@ -629,6 +684,10 @@ proxy:
       periodSeconds: 10
   affinity:
     anti_affinity: true
+    # Set the anti affinity type. Valid values:
+    # requiredDuringSchedulingIgnoredDuringExecution - rules must be met for pod to be scheduled (hard) requires at least one node per replica
+    # preferredDuringSchedulingIgnoredDuringExecution - scheduler will try to enforce but not guranentee
+    type: requiredDuringSchedulingIgnoredDuringExecution
   annotations: {}
   tolerations: []
   gracePeriod: 30
@@ -668,6 +727,20 @@ proxy:
   service:
     annotations: {}
     type: LoadBalancer
+  ## Proxy ingress
+  ## templates/proxy-ingress.yaml
+  ##
+  ingress:
+    enabled: false
+    annotations: {}
+    tls:
+      enabled: false
+
+      ## Optional. Leave it blank if your Ingress Controller can provide a default certificate.
+      secretName: ""
+
+    hostname: ""
+    path: "/"
   ## Proxy PodDisruptionBudget
   ## templates/proxy-pdb.yaml
   ##
@@ -803,7 +876,6 @@ grafana:
   annotations: {}
   tolerations: []
   gracePeriod: 30
-  port: 3000
   resources:
     requests:
       memory: 250Mi
@@ -813,18 +885,20 @@ grafana:
   ##
   service:
     type: LoadBalancer
+    port: 3000
+    targetPort: 3000
     annotations: {}
   plugins: []
+  ## Grafana configMap
+  ## templates/grafana-configmap.yaml
+  ##
+  configData: {}
   ## Grafana ingress
   ## templates/grafana-ingress.yaml
   ##
   ingress:
     enabled: false
-    annotations:
-      kubernetes.io/ingress.class: nginx
-      # nginx.ingress.kubernetes.io/rewrite-target: /$1
-      # ingress.kubernetes.io/force-ssl-redirect: "true"
-      ingress.kubernetes.io/rewrite-target: /
+    annotations: {}
     labels: {}
 
     tls: []
@@ -834,7 +908,6 @@ grafana:
 
     ## Extra paths to prepend to every host configuration. This is useful when working with annotation based services.
     extraPaths: []
-    ## Required if ingress is enabled
     hostname: ""
     protocol: http
     path: /grafana
@@ -848,7 +921,6 @@ grafana:
 ##
 pulsar_manager:
   component: pulsar-manager
-  port: 9527
   replicaCount: 1
   # nodeSelector:
   # cloud.google.com/gke-nodepool: default-pool
@@ -873,7 +945,24 @@ pulsar_manager:
   ##
   service:
     type: LoadBalancer
+    port: 9527
+    targetPort: 9527
     annotations: {}
+  ## Pulsar manager ingress
+  ## templates/pulsar-manager-ingress.yaml
+  ##
+  ingress:
+    enabled: false
+    annotations: {}
+    tls:
+      enabled: false
+
+      ## Optional. Leave it blank if your Ingress Controller can provide a default certificate.
+      secretName: ""
+
+    hostname: ""
+    path: "/"
+
   admin:
     user: pulsar
     password: pulsar

@@ -16,13 +16,13 @@
 # specific language governing permissions and limitations
 # under the License.
 #
-
+{{- if .Values.initialize }}
 {{- if .Values.components.bookkeeper }}
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: "{{ template "pulsar.fullname" . }}-{{ .Values.bookkeeper.component }}-init"
-  namespace: {{ .Values.namespace }}
+  namespace: {{ template "pulsar.namespace" . }}
   labels:
     {{- include "pulsar.standardLabels" . | nindent 4 }}
     component: "{{ .Values.bookkeeper.component }}-init"
@@ -31,18 +31,24 @@ spec:
     spec:
       initContainers:
       - name: wait-zookeeper-ready
-        image: "{{ .Values.bookkeeper.metadata.image.repository }}:{{ .Values.bookkeeper.metadata.image.tag }}"
-        imagePullPolicy: {{ .Values.bookkeeper.metadata.image.pullPolicy }}
+        image: "{{ .Values.images.bookie.repository }}:{{ .Values.images.bookie.tag }}"
+        imagePullPolicy: {{ .Values.images.bookie.pullPolicy }}
         command: ["sh", "-c"]
         args:
           - >-
-            until nslookup {{ template "pulsar.fullname" . }}-{{ .Values.zookeeper.component }}-{{ add (.Values.zookeeper.replicaCount | int) -1 }}.{{ template "pulsar.fullname" . }}-{{ .Values.zookeeper.component }}.{{ .Values.namespace }}; do
+            {{- if $zk:=.Values.pulsar_metadata.userProvidedZookeepers }}
+            until bin/pulsar zookeeper-shell -server {{ $zk }} ls {{ or .Values.metadataPrefix "/" }}; do
+              echo "user provided zookeepers {{ $zk }} are unreachable... check in 3 seconds ..." && sleep 3;
+            done;
+            {{ else }}
+            until nslookup {{ template "pulsar.fullname" . }}-{{ .Values.zookeeper.component }}-{{ add (.Values.zookeeper.replicaCount | int) -1 }}.{{ template "pulsar.fullname" . }}-{{ .Values.zookeeper.component }}.{{ template "pulsar.namespace" . }}; do
               sleep 3;
             done;
+            {{- end}}
       containers:
       - name: "{{ template "pulsar.fullname" . }}-{{ .Values.bookkeeper.component }}-init"
-        image: "{{ .Values.bookkeeper.metadata.image.repository }}:{{ .Values.bookkeeper.metadata.image.tag }}"
-        imagePullPolicy: {{ .Values.bookkeeper.metadata.image.pullPolicy }}
+        image: "{{ .Values.images.bookie.repository }}:{{ .Values.images.bookie.tag }}"
+        imagePullPolicy: {{ .Values.images.bookie.pullPolicy }}
       {{- if .Values.bookkeeper.metadata.resources }}
         resources:
 {{ toYaml .Values.bookkeeper.metadata.resources | indent 10 }}
@@ -56,7 +62,7 @@ spec:
                 echo "bookkeeper cluster already initialized";
             else
                 {{- if not (eq .Values.metadataPrefix "") }}
-                bin/bookkeeper org.apache.zookeeper.ZooKeeperMain -server {{ template "pulsar.fullname" . }}-{{ .Values.zookeeper.component }} create {{ .Values.metadataPrefix }} 'created for pulsar cluster "{{ template "pulsar.fullname" . }}"' || yes &&
+                bin/bookkeeper org.apache.zookeeper.ZooKeeperMain -server {{ template "pulsar.fullname" . }}-{{ .Values.zookeeper.component }} create {{ .Values.metadataPrefix }} 'created for pulsar cluster "{{ template "pulsar.cluster.name" . }}"' || yes &&
                 {{- end }}
                 bin/bookkeeper shell initnewcluster;
             fi
@@ -68,4 +74,5 @@ spec:
       volumes:
       {{- include "pulsar.toolset.certs.volumes" . | nindent 6 }}
       restartPolicy: Never
+{{- end }}
 {{- end }}
